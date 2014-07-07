@@ -6,12 +6,12 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/randallsquared/go-tigertonic"
 	"github.com/randallsquared/gochute/profile"
-	"github.com/rcrowley/go-tigertonic"
 )
 
 var (
-	listen            string = "127.0.0.1:1600"
+	listen            string = ":1600"
 	mux               *tigertonic.TrieServeMux
 	cors              *tigertonic.CORSBuilder
 	allowedPhotoTypes map[string]bool
@@ -19,7 +19,6 @@ var (
 
 // these "constants" are more properly config variables
 const (
-	ChuteErr         = "X-chute-error"
 	ChuteToken       = "X-chute-token"
 	UsernamelessSalt = "nx7sn3ks67La72&2"
 )
@@ -34,6 +33,10 @@ type Context struct {
 
 func error400(e string, addl ...interface{}) (int, http.Header, Response, error) {
 	return abort(tigertonic.BadRequest{errors.New(e)}, e, addl)
+}
+
+func error401(e string, addl ...interface{}) (int, http.Header, Response, error) {
+	return abort(tigertonic.Unauthorized{errors.New(e)}, e, addl)
 }
 
 func error403(e string, addl ...interface{}) (int, http.Header, Response, error) {
@@ -59,7 +62,7 @@ func abort(err error, why string, addl []interface{}) (int, http.Header, Respons
 }
 
 func unauthenticated(h interface{}) http.Handler {
-	return cors.Build(tigertonic.Marshaled(h))
+	return cors.Build(tigertonic.Marshaled(h)) //tigertonic.Logged(tigertonic.Marshaled(h), nil))
 }
 
 func authenticated(h interface{}) http.Handler {
@@ -76,7 +79,10 @@ func init() {
 		"image/gif":  true,
 		"image/png":  true}
 	// set up web handlers
-	cors = tigertonic.NewCORSBuilder().AddAllowedOrigins("*")
+	cors = tigertonic.NewCORSBuilder()
+	cors.AddAllowedOrigins("*")
+	cors.AddAllowedHeaders("content-type", "cache-control", "pragma", ChuteToken)
+	cors.AddExposedHeaders(ChuteToken)
 	mux = tigertonic.NewTrieServeMux()
 	mux.Handle("POST", "/profiles/self", unauthenticated(createProfile))
 	mux.Handle("POST", "/auths/login", unauthenticated(login))

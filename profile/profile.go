@@ -17,7 +17,7 @@ import (
 	"code.google.com/p/go.crypto/bcrypt"
 	"github.com/coopernurse/gorp"
 	_ "github.com/lib/pq"
-	"github.com/rcrowley/go-tigertonic"
+	"github.com/randallsquared/go-tigertonic"
 	"launchpad.net/goamz/aws"
 	"launchpad.net/goamz/s3"
 )
@@ -616,6 +616,10 @@ func GetTypes() ([]Utype, error) {
 
 // hash returns the canonical Hash for an Auth (why is this not a method on Auth?)
 // If the second argument 'Username' is nil, this uses SHA512; otherwise bcrypt.
+// We can't use bcrypt for auths without username because there'd be no way to
+// know which one to get to test!  On the other hand, we really do want to use
+// bcrypt in the case where this is someone's password, so we're stuck with two
+// methods.
 func hash(h []byte, u *string) ([]byte, error) {
 	if u == nil {
 		sum := sha512.Sum512([]byte(UsernamelessSalt + string(h)))
@@ -757,7 +761,20 @@ func (a *Auth) GetWithUsername() error {
 	if err != nil {
 		return err
 	}
-	return bcrypt.CompareHashAndPassword(a.Hash, inHash)
+	a.InHash = inHash // sigh: https://github.com/coopernurse/gorp/issues/164
+	return nil
+}
+
+// Authenticated checks whether an Auth after Auth.Get is authenticated.
+func (a *Auth) Authenticated() bool {
+	if a.Username == nil {
+		// If there's no username, then we're authenticated by default.
+		return true
+	}
+	// If there is a username, then we have to check the hash;
+	// no need to check a.InHash for existence, since any error is a fail.
+	err := bcrypt.CompareHashAndPassword(a.Hash, a.InHash)
+	return (err != nil)
 }
 
 // Login creates a logged in token and puts it in the given Auth.

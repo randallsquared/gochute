@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/randallsquared/go-tigertonic"
 	"github.com/randallsquared/gochute/profile"
-	"github.com/rcrowley/go-tigertonic"
 )
 
 type PhotoHandler struct {
@@ -106,7 +106,7 @@ func authenticate(r *http.Request) (http.Header, error) {
 	auth := new(profile.Auth)
 	auth.Token = &token
 	err := auth.Get()
-	if err != nil {
+	if err != nil || !auth.Authenticated() {
 		return nil, tigertonic.Unauthorized{errors.New("please log in")}
 	}
 	c := tigertonic.Context(r).(*Context)
@@ -513,8 +513,8 @@ func createAuth(u *url.URL, h http.Header, r *Auth, c *Context) (int, http.Heade
 func login(u *url.URL, h http.Header, r *Auth) (int, http.Header, Response, error) {
 	auth := profile.NewAuth(r.Hash, r.Username)
 	err := auth.Get()
-	if err != nil {
-		return error400("login failure", "hash:", *r.Hash)
+	if err != nil || !auth.Authenticated() {
+		return error401("login failure", "hash:", *r.Hash)
 	}
 	token, err := auth.Login()
 	if err != nil {
