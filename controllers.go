@@ -481,7 +481,7 @@ func createProfile(u *url.URL, h http.Header, r *Auth) (int, http.Header, Respon
 	oh := http.Header{}
 	oh.Add(ChuteToken, *a.Token)
 	response := Profile{Id: p.Id, Created: p.Created}
-	return http.StatusOK, oh, response, nil
+	return http.StatusCreated, oh, response, nil
 }
 
 func createAuth(u *url.URL, h http.Header, r *Auth, c *Context) (int, http.Header, Response, error) {
