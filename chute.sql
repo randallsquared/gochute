@@ -58,7 +58,8 @@ create table free (
  id serial primary key,
  profile integer not null references profile (id),
  freestart timestamp with time zone not null,
- freeend timestamp with time zone not null
+ freeend timestamp with time zone not null,
+ created timestamp with time zone not null
 );
 
 create table utype (
