@@ -46,6 +46,13 @@ type Auth struct {
 	Authorized bool
 }
 
+type AuthChange struct {
+	Hash       *string
+	Username   *string
+	Name       string
+	Authorized bool
+}
+
 type Freetime struct {
 	Start time.Time
 	End   time.Time
@@ -484,24 +491,29 @@ func createProfile(u *url.URL, h http.Header, r *Auth) (int, http.Header, Respon
 	return http.StatusCreated, oh, response, nil
 }
 
-func createAuth(u *url.URL, h http.Header, r *Auth, c *Context) (int, http.Header, Response, error) {
+func createAuth(u *url.URL, h http.Header, r *AuthChange, c *Context) (int, http.Header, Response, error) {
 	a := profile.NewAuth(r.Hash, r.Username)
 	err := a.Get()
-	if err == nil && a.Profile != c.Profile.Id {
-		// this auth exists and it wasn't ours; error
-		return error400("unauthorized access")
-	} else if err != nil {
+	if err != nil {
 		// this auth doesn't already exist
 		a.Name = r.Name
+		a.Authorized = r.Authorized
 		a.Profile = c.Profile.Id
+		a.InHash = []byte(*r.Hash)
 		err = a.Create()
 		if err != nil {
 			return error500("db failure: p73", err.Error())
 		}
-	} else if a.Profile == c.Profile.Id {
-		// this auth exists and it's ours
+	} else if a.Username != nil && a.Profile != c.Profile.Id {
+		// this auth exists and is not a device and it wasn't ours; error
+		return error400("unauthorized access")
+	} else {
+		log.Println("Got an auth: ", a)
+		// this auth exists and it's ours (or a device that's about to be ours...)
 		a.Name = r.Name
 		a.Authorized = r.Authorized
+		a.Profile = c.Profile.Id
+		log.Println("Auth about to save: ", a)
 		err = a.Save()
 		if err != nil {
 			return error500("db failure: p83", err.Error())

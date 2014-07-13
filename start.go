@@ -86,7 +86,7 @@ func init() {
 	mux = tigertonic.NewTrieServeMux()
 	mux.Handle("POST", "/profiles/self", unauthenticated(createProfile))
 	mux.Handle("POST", "/auths/login", unauthenticated(login))
-	mux.Handle("POST", "/auths/logout", authenticated(logout))
+	mux.Handle("POST", "/auths/logout", authenticated(logout)) // er, why did I build this?
 	mux.Handle("GET", "/auths", authenticated(getAuths))
 	mux.Handle("POST", "/auths", authenticated(createAuth)) // both create and update
 	mux.Handle("GET", "/profiles/{id}", authenticated(getProfile))

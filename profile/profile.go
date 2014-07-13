@@ -397,6 +397,10 @@ func (p *Profile) Save() error {
 
 // Save saves an Auth to the database, ensuring that Updated is current.
 func (a *Auth) Save() error {
+	if a.Username != nil && a.InHash != nil {
+		// well, we have to make sure that a new password is fixed up first,
+		// since Username is not the index.
+	}
 	now := time.Now()
 	a.Updated = &now
 	count, err := dbmap.Update(a)
@@ -600,6 +604,26 @@ func (p *Profile) PostUpdate(s gorp.SqlExecutor) error {
 	return nil
 }
 
+// PreUpdate fixes up the Hash field of Auth to match what the current Hash should be
+// based on the InHash and Username, if both of those are present.
+func (a *Auth) PreUpdate(s gorp.SqlExecutor) error {
+	log.Println("pre updating...", a)
+	if a.Username == nil || a.InHash == nil {
+		return nil
+	}
+	h, err := hash(a.InHash, a.Username)
+	if err != nil {
+		return err
+	}
+	sql := "update auth set hash = $1 where username = $2 and hash = $3"
+	_, err = s.Exec(sql, h, a.Username, a.Hash)
+	if err != nil {
+		return err
+	}
+	a.Hash = h
+	return nil
+}
+
 // GetFlags returns an array of all possible Flags.
 func GetFlags() ([]Flag, error) {
 	var fs []Flag
@@ -773,7 +797,11 @@ func (a *Auth) Authenticated() bool {
 	}
 	// If there is a username, then we have to check the hash;
 	// no need to check a.InHash for existence, since any error is a fail.
-	err := bcrypt.CompareHashAndPassword(a.Hash, a.InHash)
+	h, err := hash(a.InHash, a.Username)
+	if err != nil {
+		return false
+	}
+	err = bcrypt.CompareHashAndPassword(a.Hash, h)
 	return (err != nil)
 }
 
