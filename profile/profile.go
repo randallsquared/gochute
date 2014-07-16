@@ -65,6 +65,7 @@ var (
 // for a single Username/Password Auth.
 type Auth struct {
 	InHash     []byte `db:"-"`
+	Id         int
 	Hash       []byte
 	Created    *time.Time
 	Updated    *time.Time
@@ -171,7 +172,7 @@ func init() {
 	dbmap = &gorp.DbMap{Db: db, Dialect: gorp.PostgresDialect{}}
 	dbmap.TraceOn("[gorp]", log.New(os.Stdout, "chute:", log.Lmicroseconds))
 	dbmap.AddTableWithName(Profile{}, "profile").SetKeys(true, "Id")
-	dbmap.AddTableWithName(Auth{}, "auth").SetKeys(false, "Hash")
+	dbmap.AddTableWithName(Auth{}, "auth").SetKeys(true, "Id")
 	dbmap.AddTableWithName(Photo{}, "photo").SetKeys(true, "Id")
 	dbmap.AddTableWithName(Freetime{}, "free").SetKeys(true, "Id")
 	dbmap.AddTableWithName(Utype{}, "utype").SetKeys(true, "Id")
@@ -397,12 +398,16 @@ func (p *Profile) Save() error {
 
 // Save saves an Auth to the database, ensuring that Updated is current.
 func (a *Auth) Save() error {
-	if a.Username != nil && a.InHash != nil {
-		// well, we have to make sure that a new password is fixed up first,
-		// since Username is not the index.
-	}
 	now := time.Now()
 	a.Updated = &now
+	// If we have no Username, no Hash update can happen, since Devices never update their Hash.
+	if a.Username != nil && a.InHash != nil {
+		h, err := hash(a.InHash, a.Username)
+		if err != nil {
+			return err
+		}
+		a.Hash = h
+	}
 	count, err := dbmap.Update(a)
 	if err != nil {
 		return err
@@ -604,26 +609,6 @@ func (p *Profile) PostUpdate(s gorp.SqlExecutor) error {
 	return nil
 }
 
-// PreUpdate fixes up the Hash field of Auth to match what the current Hash should be
-// based on the InHash and Username, if both of those are present.
-func (a *Auth) PreUpdate(s gorp.SqlExecutor) error {
-	log.Println("pre updating...", a)
-	if a.Username == nil || a.InHash == nil {
-		return nil
-	}
-	h, err := hash(a.InHash, a.Username)
-	if err != nil {
-		return err
-	}
-	sql := "update auth set hash = $1 where username = $2 and hash = $3"
-	_, err = s.Exec(sql, h, a.Username, a.Hash)
-	if err != nil {
-		return err
-	}
-	a.Hash = h
-	return nil
-}
-
 // GetFlags returns an array of all possible Flags.
 func GetFlags() ([]Flag, error) {
 	var fs []Flag
@@ -754,12 +739,15 @@ func (p *Profile) Get(a *Auth) error {
 }
 
 // Get populates an Auth as follows:
+// if the Auth has an Id, get the Auth that matches that Id.
 // if the Auth has a Token, get the Auth that matches that Token.
 // if the Auth has a Username, get the Auth with that Username if the client hash matches.
 // if the Auth has no Username, get the Auth by the SHA512 hash of the client hash.
 func (a *Auth) Get() error {
-	if a.Token != nil {
-		return a.GetWithToken()
+	if a.Id != 0 {
+		return dbmap.SelectOne(a, "select * from auth where id = $1", a.Id)
+	} else if a.Token != nil {
+		return dbmap.SelectOne(a, "select * from auth where token = $1", a.Token)
 	} else if a.Username == nil {
 		return a.GetWithHash()
 	}
@@ -771,11 +759,6 @@ func (a *Auth) GetWithHash() error {
 	sum := sha512.Sum512([]byte(UsernamelessSalt + string(a.InHash)))
 	hash := hex.EncodeToString(sum[0:64])
 	return dbmap.SelectOne(a, "select * from auth where hash = $1", hash)
-}
-
-// GetWithToken supports Auth.Get
-func (a *Auth) GetWithToken() error {
-	return dbmap.SelectOne(a, "select * from auth where token = $1", a.Token)
 }
 
 // GetWithUsername supports Auth.Get
@@ -791,8 +774,10 @@ func (a *Auth) GetWithUsername() error {
 
 // Authenticated checks whether an Auth after Auth.Get is authenticated.
 func (a *Auth) Authenticated() bool {
+	log.Println("authenticating!")
 	if a.Username == nil {
 		// If there's no username, then we're authenticated by default.
+		log.Println("no username; moving on!")
 		return true
 	}
 	// If there is a username, then we have to check the hash;
@@ -801,8 +786,9 @@ func (a *Auth) Authenticated() bool {
 	if err != nil {
 		return false
 	}
-	err = bcrypt.CompareHashAndPassword(a.Hash, h)
-	return (err != nil)
+	log.Println("now we have the incoming hash: ", string(a.InHash), "the hash of that:", string(h), "and our old hash", string(a.Hash))
+	err = bcrypt.CompareHashAndPassword(a.Hash, a.InHash)
+	return (err == nil)
 }
 
 // Login creates a logged in token and puts it in the given Auth.

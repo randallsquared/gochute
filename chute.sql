@@ -34,7 +34,8 @@ create table log (
 );
 
 create table auth (
- hash text primary key,
+ id serial primary key,
+ hash text not null unique,
  created timestamp with time zone,
  updated timestamp with time zone,
  lastAuth timestamp with time zone,

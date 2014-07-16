@@ -35,6 +35,7 @@ type Profile struct {
 }
 
 type Auth struct {
+	Id         int
 	Profile    int
 	Hash       *string
 	Username   *string
@@ -46,11 +47,22 @@ type Auth struct {
 	Authorized bool
 }
 
+type AuthConnect struct {
+	Hash string
+}
+
 type AuthChange struct {
+	Id         *int
 	Hash       *string
 	Username   *string
 	Name       string
 	Authorized bool
+}
+
+type AuthCreate struct {
+	Username *string
+	Hash     string
+	Name     string
 }
 
 type Freetime struct {
@@ -113,7 +125,7 @@ func authenticate(r *http.Request) (http.Header, error) {
 	auth := new(profile.Auth)
 	auth.Token = &token
 	err := auth.Get()
-	if err != nil || !auth.Authenticated() {
+	if err != nil {
 		return nil, tigertonic.Unauthorized{errors.New("please log in")}
 	}
 	c := tigertonic.Context(r).(*Context)
@@ -491,41 +503,78 @@ func createProfile(u *url.URL, h http.Header, r *Auth) (int, http.Header, Respon
 	return http.StatusCreated, oh, response, nil
 }
 
-func createAuth(u *url.URL, h http.Header, r *AuthChange, c *Context) (int, http.Header, Response, error) {
-	a := profile.NewAuth(r.Hash, r.Username)
+func connectAuth(u *url.URL, h http.Header, r *AuthConnect, c *Context) (int, http.Header, Response, error) {
+	a := profile.NewAuth(&r.Hash, nil)
+	err := a.Get()
+	if err != nil {
+		return error400("couldn't find that auth", err.Error())
+	}
+	if a.Username != nil {
+		return error400("can't connect a username and password to another account")
+	}
+	// this is the only change we make at this endpoint
+	a.Profile = c.Profile.Id
+	err = a.Save()
+	if err != nil {
+		return error500("db failure: p520", err.Error())
+	}
+	return getAuths(u, h, nil, c)
+}
+
+func updateAuth(u *url.URL, h http.Header, r *AuthChange, c *Context) (int, http.Header, Response, error) {
+	a := new(profile.Auth)
+	if r.Id != nil {
+		a.Id = *r.Id
+	} else {
+		a.Hash = []byte(*r.Hash)
+		a.Username = r.Username
+	}
+	err := a.Get()
+	if err != nil {
+		return error400("couldn't find that auth", err.Error())
+	}
+	if a.Profile != c.Profile.Id {
+		return error400("unauthorized access")
+	}
+	if r.Hash != nil {
+		a.InHash = []byte(*r.Hash)
+	}
+	a.Username = r.Username
+	a.Name = r.Name
+	a.Authorized = r.Authorized
+	err = a.Save()
+	if err != nil {
+		return error500("db failure: p544", err.Error())
+	}
+	return getAuths(u, h, nil, c)
+}
+
+func createAuth(u *url.URL, h http.Header, r *AuthCreate, c *Context) (int, http.Header, Response, error) {
+	a := profile.NewAuth(&r.Hash, r.Username)
 	err := a.Get()
 	if err != nil {
 		// this auth doesn't already exist
 		a.Name = r.Name
-		a.Authorized = r.Authorized
+		a.Authorized = true
 		a.Profile = c.Profile.Id
-		a.InHash = []byte(*r.Hash)
+		a.InHash = []byte(r.Hash)
+		a.Username = r.Username
 		err = a.Create()
 		if err != nil {
-			return error500("db failure: p73", err.Error())
+			return error500("db failure: p560", err.Error())
 		}
-	} else if a.Username != nil && a.Profile != c.Profile.Id {
-		// this auth exists and is not a device and it wasn't ours; error
-		return error400("unauthorized access")
-	} else {
-		log.Println("Got an auth: ", a)
-		// this auth exists and it's ours (or a device that's about to be ours...)
-		a.Name = r.Name
-		a.Authorized = r.Authorized
-		a.Profile = c.Profile.Id
-		log.Println("Auth about to save: ", a)
-		err = a.Save()
-		if err != nil {
-			return error500("db failure: p83", err.Error())
-		}
+		return getAuths(u, h, nil, c)
 	}
-	return getAuths(u, h, nil, c)
+	return error400("unauthorized access")
 }
 
 func login(u *url.URL, h http.Header, r *Auth) (int, http.Header, Response, error) {
 	auth := profile.NewAuth(r.Hash, r.Username)
 	err := auth.Get()
-	if err != nil || !auth.Authenticated() {
+	log.Println("got auth:", auth)
+	if err != nil {
+		return error401("login failure", "no such auth!")
+	} else if !auth.Authenticated() {
 		return error401("login failure", "hash:", *r.Hash)
 	}
 	token, err := auth.Login()
@@ -555,7 +604,7 @@ func getAuths(u *url.URL, h http.Header, _ interface{}, c *Context) (int, http.H
 		return error500("db failure: p102", err.Error())
 	}
 	for _, auth := range auths {
-		out = append(out, Auth{auth.Profile, nil, auth.Username, auth.Name, auth.Token, auth.Created, auth.Updated, auth.LastAuth, auth.Authorized})
+		out = append(out, Auth{auth.Id, auth.Profile, nil, auth.Username, auth.Name, auth.Token, auth.Created, auth.Updated, auth.LastAuth, auth.Authorized})
 	}
 	return http.StatusOK, nil, out, nil
 }

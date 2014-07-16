@@ -85,10 +85,12 @@ func init() {
 	cors.AddExposedHeaders(ChuteToken)
 	mux = tigertonic.NewTrieServeMux()
 	mux.Handle("POST", "/profiles/self", unauthenticated(createProfile))
-	mux.Handle("POST", "/auths/login", unauthenticated(login))
-	mux.Handle("POST", "/auths/logout", authenticated(logout)) // er, why did I build this?
-	mux.Handle("GET", "/auths", authenticated(getAuths))
-	mux.Handle("POST", "/auths", authenticated(createAuth)) // both create and update
+	mux.Handle("POST", "/actions/login", unauthenticated(login))
+	mux.Handle("POST", "/actions/logout", authenticated(logout)) // er, why did I build this?
+	mux.Handle("POST", "/auths", authenticated(connectAuth))
+	mux.Handle("GET", "/profiles/self/auths", authenticated(getAuths))
+	mux.Handle("POST", "/profiles/self/auths", authenticated(createAuth))
+	mux.Handle("PUT", "/profiles/self/auths/{id}", authenticated(updateAuth))
 	mux.Handle("GET", "/profiles/{id}", authenticated(getProfile))
 	mux.Handle("GET", "/profiles/self", authenticated(getProfile))
 	mux.Handle("PUT", "/profiles/self", authenticated(updateProfile))
