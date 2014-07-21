@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -21,6 +22,11 @@ type Photo struct {
 	Id            int
 	Created       time.Time
 	Href, Caption string
+}
+
+type PhotoChange struct {
+	Id      int
+	Caption string
 }
 
 type Profile struct {
@@ -820,6 +826,22 @@ func updateProfile(u *url.URL, h http.Header, p *Profile, c *Context) (int, http
 	return http.StatusOK, nil, out, nil
 }
 
+func updatePhoto(u *url.URL, h http.Header, p *PhotoChange, c *Context) (int, http.Header, Response, error) {
+	photo, err := c.Profile.GetPhoto(p.Id)
+	if err != nil {
+		return error400("'"+string(p.Id)+"' is not a valid Photo id.", "Bad photo id.")
+	}
+	photo.Caption = p.Caption
+	err = photo.Save()
+	if err != nil {
+		return error500("db failure: p837", err.Error())
+	}
+	href := photo.GetExpiringUrl(c.Profile.Folder)
+	out := Photo{photo.Id, photo.Created, href, photo.Caption}
+	return http.StatusOK, nil, out, nil
+
+}
+
 func removePhoto(u *url.URL, h http.Header, _ interface{}, c *Context) (int, http.Header, Response, error) {
 	id := u.Query().Get("{id}")
 	intId, err := strconv.Atoi(id)
@@ -861,7 +883,7 @@ func (ph PhotoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	fmt.Println(r.FormValue("caption"))
 	c := tigertonic.Context(r).(*Context)
 	photo := c.Profile.NewPhoto(r.FormValue("caption"))
-	count, err := photo.Save(c.Profile.Folder, ctype, file)
+	_, err = photo.Create(c.Profile.Folder, ctype, file)
 	if err != nil {
 		complaint = `{"error": "file upload issue: p244"}`
 		log.Println(complaint, err.Error())
@@ -869,10 +891,16 @@ func (ph PhotoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(complaint + "\n"))
 		return
 	}
-	strCount := strconv.FormatInt(count, 10)
-	strId := strconv.Itoa(photo.Id)
-	message := `{"status": "ok", "id": ` + strId + `, "uploaded": ` + strCount + "}\n"
-	_, err = w.Write([]byte(message))
+	href := photo.GetExpiringUrl(c.Profile.Folder)
+	output, err := json.Marshal(Photo{photo.Id, photo.Created, href, photo.Caption})
+	if err != nil {
+		complaint = `{"error": "file upload issue: p874"}`
+		log.Println(complaint, err.Error())
+		w.WriteHeader(500)
+		w.Write([]byte(complaint + "\n"))
+		return
+	}
+	_, err = w.Write([]byte(output))
 	if err != nil {
 		log.Println("WTF? p226", err.Error())
 	}

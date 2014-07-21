@@ -198,10 +198,23 @@ func StatusStrings() []string {
 	return out
 }
 
-// Save takes the Profile Folder, a content-type (passed to S3), and the binary file
+// Save saves only database information about this Photo; updating the S3 info requires
+// recreating it.
+func (p *Photo) Save() error {
+	count, err := dbmap.Update(p)
+	if err != nil {
+		return err
+	}
+	if count != 1 {
+		return errors.New("update Photo didn't update 1 row? count: " + string(count))
+	}
+	return nil
+}
+
+// Create takes the Profile Folder, a content-type (passed to S3), and the binary file
 // data, and saves the file to S3, then saving the S3 information to the database.
 // It returns the number of bytes sent to S3, for no particular reason, and any error.
-func (p *Photo) Save(folder, ctype string, file multipart.File) (int64, error) {
+func (p *Photo) Create(folder, ctype string, file multipart.File) (int64, error) {
 	end, err := file.Seek(0, 2)
 	if err != nil {
 		return 0, err

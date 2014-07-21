@@ -96,6 +96,7 @@ func init() {
 	mux.Handle("PUT", "/profiles/self", authenticated(updateProfile))
 	mux.Handle("POST", "/profiles/self/photos", rawAuthenticated(PhotoHandler{}))
 	mux.Handle("DELETE", "/profiles/self/photos/{id}", authenticated(removePhoto))
+	mux.Handle("PUT", "/profiles/self/photos/{id}", authenticated(updatePhoto))
 	mux.Handle("POST", "/profiles/self/frees", authenticated(createFreetime))
 	mux.Handle("GET", "/profiles/self/frees", authenticated(getFreetime))
 	mux.Handle("GET", "/profiles/{id}/frees", authenticated(getFreetime))
