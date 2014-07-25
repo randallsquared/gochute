@@ -362,7 +362,7 @@ func (p *Profile) NewFreetime(Start, End time.Time) error {
 // GetFreetimes returns an array of Freetime from today forward.
 func (p *Profile) GetFreetimes() ([]Freetime, error) {
 	fs := []Freetime{}
-	_, err := dbmap.Select(&fs, "select * from free where profile = $1 and freestart > current_date order by freestart asc", p.Id)
+	_, err := dbmap.Select(&fs, "select * from free where profile = $1 and freestart > current_date - 1 order by freestart asc", p.Id)
 	return fs, err
 }
 
