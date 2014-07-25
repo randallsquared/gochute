@@ -776,7 +776,7 @@ func removeFreetime(u *url.URL, h http.Header, _ interface{}, c *Context) (int, 
 	if err != nil {
 		return error500("db failure: p253", err.Error())
 	}
-	return http.StatusNoContent, nil, nil, nil
+	return getFreetime(u, h, nil, c)
 }
 
 func createFreetime(u *url.URL, h http.Header, fs []Freetime, c *Context) (int, http.Header, Response, error) {
