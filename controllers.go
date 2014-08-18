@@ -448,6 +448,7 @@ func invite(u *url.URL, h http.Header, i *NewInvite, c *Context) (int, http.Head
 		atts = append(atts, profile.Attendee{*p, profile.StatusPending})
 	}
 	ii := profile.Invite{}
+	ii.Attendees = atts
 	ii.Organizer = c.Profile.Id
 	ii.Active = true
 	ii.Start = i.Start

@@ -278,7 +278,7 @@ func (p *Profile) Search(from time.Time, utypes, flags []string) ([]Profile, err
 	// TODO: handle lat and long!
 	var ps []Profile
 	q := `
-select profile.* from free inner join profile on (free.profile = profile.id) 
+select distinct profile.* from free inner join profile on (free.profile = profile.id) 
 where freestart < :from and :from < freeend 
     `
 	params := map[string]interface{}{}
