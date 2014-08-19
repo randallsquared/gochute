@@ -11,6 +11,7 @@ import (
 	"log"
 	"mime/multipart"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -684,27 +685,45 @@ func (i *Invite) ChangeStatus(p Profile, s Status) error {
 	return err
 }
 
+func bindVarFor(a []interface{}) string {
+	return fmt.Sprintf("$%d", len(a))
+}
+
 // GetInvites takes an optional status and a time and returns an array of Invites that match.
 // An empty status is treated as meaning that Invites which have the Profile as an Organizer
 // are desired.
-func (p *Profile) GetInvites(status *Status, from time.Time) ([]Invite, error) {
+func (p *Profile) GetInvites(statuses []Status, from time.Time, to time.Time, active *bool) ([]Invite, error) {
 	var query string
+	var params []interface{}
 	is := []Invite{}
-	params := map[string]interface{}{"profile": p.Id, "from": from.Format("2006-01-02")}
-	if status != nil {
-		query = "select invite.* from invite inner join profile_invite on (id = invite) where "
-		query += " status = :status and "
+	if len(statuses) > 0 {
+		query = "select invite.* from invite inner join profile_invite on (id = invite) where ("
+		var connector = ""
+		for _, s := range statuses {
+			params = append(params, string(s))
+			query += connector + " status = " + bindVarFor(params)
+			connector = " or "
+		}
+		query += ")"
 
-		s := string(*status)
-		params["status"] = s
-
-		query += " profile = :profile and invitestart > :from "
+		params = append(params, strconv.Itoa(p.Id))
+		query += " and profile = " + bindVarFor(params)
 	} else {
-		query = " select invite.* from invite where "
-		query += " organizer = :profile and invitestart > :from "
+		params = append(params, strconv.Itoa(p.Id))
+		query = " select invite.* from invite where organizer = " + bindVarFor(params)
 	}
+	if active != nil {
+		params = append(params, strconv.FormatBool(*active))
+		query += " and active = " + bindVarFor(params)
+	}
+
+	params = append(params, from.Format("2006-01-02"))
+	query += " and invitestart > " + bindVarFor(params)
+
+	params = append(params, to.Format("2006-01-02"))
+	query += " and invitestart < " + bindVarFor(params)
 	query += " order by created asc"
-	_, err := dbmap.Select(&is, query, params)
+	_, err := dbmap.Select(&is, query, params...)
 	return is, err
 }
 

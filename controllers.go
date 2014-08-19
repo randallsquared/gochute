@@ -623,16 +623,29 @@ getMyInvitesBySearch pulls from the URL (and can only see invites to which this 
 */
 func getMyInvitesBySearch(u *url.URL, h http.Header, _ interface{}, c *Context) (int, http.Header, Response, error) {
 	var (
-		is     []Invite
-		i      Invite
-		err    error
-		status *profile.Status = nil
-		from   time.Time
+		is       []Invite
+		i        Invite
+		err      error
+		statuses []profile.Status
+		from     time.Time
+		to       time.Time
+		active   *bool
 	)
+	tmpTrue := true
+	tmpFalse := false
 	query := u.Query()
-	if s := query.Get("status"); len(s) > 0 {
-		tmpStatus := profile.Status(s)
-		status = &tmpStatus
+	if a := query.Get("active"); len(a) > 0 {
+		if a == "false" {
+			active = &tmpFalse
+		} else if a == "true" {
+			active = &tmpTrue
+		} else {
+			return error400("didn't understand '"+a+"' as a value for 'active'", a)
+		}
+	}
+	s := query["status"]
+	for _, status := range s {
+		statuses = append(statuses, profile.Status(status))
 	}
 	if t := query.Get("from"); len(t) > 0 {
 		from, err = time.Parse(time.RFC3339Nano, t)
@@ -642,7 +655,15 @@ func getMyInvitesBySearch(u *url.URL, h http.Header, _ interface{}, c *Context) 
 	} else {
 		from = time.Now()
 	}
-	iis, err := c.Profile.GetInvites(status, from)
+	if t := query.Get("to"); len(t) > 0 {
+		to, err = time.Parse(time.RFC3339Nano, t)
+		if err != nil {
+			return error400("didn't understand '"+t+"' as a search time", err.Error())
+		}
+	} else {
+		to = time.Now().AddDate(0, 0, 90) // 90 days from now is the default
+	}
+	iis, err := c.Profile.GetInvites(statuses, from, to, active)
 	if err != nil {
 		return error500("db failure: p409", err.Error())
 	}
