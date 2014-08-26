@@ -470,7 +470,7 @@ func (s *Status) Scan(src interface{}) error {
 		return errors.New(fmt.Sprintf("unexpected type %T", src))
 	case []uint8:
 		tmp := Status(string(src))
-		s = &tmp
+		*s = tmp
 	}
 	return nil
 }
@@ -806,7 +806,6 @@ func (a *Auth) GetWithUsername() error {
 
 // Authenticated checks whether an Auth after Auth.Get is authenticated.
 func (a *Auth) Authenticated() bool {
-	log.Println("authenticating!")
 	if a.Username == nil {
 		// If there's no username, then we're authenticated by default.
 		log.Println("no username; moving on!")

@@ -241,6 +241,7 @@ func (i *Invite) convert(ii profile.Invite) error {
 	}
 
 	for _, att := range ii.Attendees {
+		log.Println("got status", att.Status, "for attendee", att.Profile.Id)
 		p := Profile{}
 		err = p.convert(att.Profile)
 		if err != nil {
