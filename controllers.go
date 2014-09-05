@@ -72,8 +72,9 @@ type AuthCreate struct {
 }
 
 type Freetime struct {
-	Start time.Time
-	End   time.Time
+	Start    time.Time
+	End      time.Time
+	Location *profile.Location
 }
 
 // NewMessage doesn't need Invite, since it's either part of one or that info is in the URL.
@@ -775,7 +776,7 @@ func getFreetime(u *url.URL, h http.Header, _ interface{}, c *Context) (int, htt
 		return error500("db failure: p212", err.Error())
 	}
 	for _, f := range profileFs {
-		fs = append(fs, Freetime{f.Start, f.End})
+		fs = append(fs, Freetime{f.Start, f.End, f.Location})
 	}
 	return http.StatusOK, nil, fs, nil
 }
@@ -815,10 +816,10 @@ func createFreetime(u *url.URL, h http.Header, fs []Freetime, c *Context) (int, 
 	}
 	var err error
 	for _, f := range fs {
-		err = c.Profile.NewFreetime(f.Start, f.End)
+		err = c.Profile.NewFreetime(f.Start, f.End, f.Location)
 		if err != nil {
 			if err.Error() == profile.DuplicateFreetimeError {
-				err = c.Profile.UpdateFreetime(f.Start, f.End)
+				err = c.Profile.UpdateFreetime(f.Start, f.End, f.Location)
 				if err != nil {
 					return error500("db failure: p261", err.Error())
 				}

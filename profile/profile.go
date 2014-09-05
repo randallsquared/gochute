@@ -3,6 +3,7 @@
 package profile
 
 import (
+	"bytes"
 	"crypto/sha512"
 	"database/sql"
 	"encoding/hex"
@@ -78,21 +79,25 @@ type Auth struct {
 	Authorized bool
 }
 
+// Location is the lat/long for Profiles and Freetimes.
+type Location struct {
+	Latitude  float32
+	Longitude float32
+}
+
 // Profile is the central access to user information, and the receiver for most methods
 // in the profile package.
 type Profile struct {
-	Auth      *Auth   `db:"-"`
-	Utypes    []Utype `db:"-"`
-	Flags     []Flag  `db:"-"`
-	Id        int
-	Created   time.Time
-	Updated   time.Time
-	Latitude  float32
-	Longitude float32
-	Email     *string
-	Phone     *string
-	Name      *string
-	Folder    string
+	Auth    *Auth   `db:"-"`
+	Utypes  []Utype `db:"-"`
+	Flags   []Flag  `db:"-"`
+	Id      int
+	Created time.Time
+	Updated time.Time
+	Email   *string
+	Phone   *string
+	Name    *string
+	Folder  string
 }
 
 // Photo keeps track of information about uploaded photos, including the final location
@@ -113,11 +118,12 @@ type Photo struct {
 // Freetimes are unique in (Profile, Start).  This means that we can update a Freetime
 // given those data and a new End, without having to expose the Id through JSON.
 type Freetime struct {
-	Id      int
-	Profile int
-	Created time.Time
-	Start   time.Time `db:"freestart"`
-	End     time.Time `db:"freeend"`
+	Id       int
+	Profile  int
+	Created  time.Time
+	Start    time.Time `db:"freestart"`
+	End      time.Time `db:"freeend"`
+	Location *Location
 }
 
 // Utype is just the singular-at-first profile type of the user.  We're building this
@@ -315,13 +321,14 @@ where freestart < :from and :from < freeend
 }
 
 // UpdateFreetime changes the End of a Freetime given the receiving Profile and Start.
-func (p *Profile) UpdateFreetime(Start, End time.Time) error {
+func (p *Profile) UpdateFreetime(start, end time.Time, l *Location) error {
 	ft := Freetime{}
-	err := dbmap.SelectOne(&ft, "select * from free where profile = $1 and freestart = $2", p.Id, Start)
+	err := dbmap.SelectOne(&ft, "select * from free where profile = $1 and freestart = $2", p.Id, start)
 	if err != nil {
 		return err
 	}
-	ft.End = End
+	ft.End = end
+	ft.Location = l
 	count, err := dbmap.Update(&ft)
 	if err != nil {
 		return err
@@ -347,9 +354,16 @@ func (p *Profile) RemoveFreetime(Start time.Time) error {
 // NewFreetime creates a new Freetime and saves it in the database.
 // If the new Freetime has the same receiving Profile and Start time as another Freetime,
 // it is an error.
-func (p *Profile) NewFreetime(Start, End time.Time) error {
-	ft := Freetime{0, p.Id, time.Now(), Start, End}
-	err := dbmap.Insert(&ft)
+func (p *Profile) NewFreetime(start, end time.Time, l *Location) error {
+	var point *string
+	if l == nil {
+		point = nil
+	} else {
+		ps := fmt.Sprintf("(%f,%f)", l.Longitude, l.Latitude)
+		point = &ps
+	}
+	_, err := dbmap.Exec("insert into free (profile, location, created, freestart, freeend) values ($1, $2, $3, $4, $5)", p.Id, point, time.Now(), start, end)
+	//err := dbmap.Insert(&ft)
 	if err != nil {
 		message := err.Error()
 		if strings.Index(message, "violates unique constraint") > -1 {
@@ -461,6 +475,27 @@ func (p *Profile) Create() error {
 	p.Updated = t
 	p.Folder = token()
 	return dbmap.Insert(p)
+}
+
+// Scan exists only to convert from the SQL result of a []uint8 to a Location.
+func (l *Location) Scan(src interface{}) error {
+	switch src := src.(type) {
+	default:
+		return errors.New(fmt.Sprintf("unexpected type %T", src))
+	case []uint8:
+		points := bytes.Split(bytes.Trim(src, "()"), []byte{44})
+		f, err := strconv.ParseFloat(string(points[0]), 32)
+		if err != nil {
+			return errors.New(fmt.Sprintf("unexpected Longitude %T", src))
+		}
+		l.Longitude = float32(f)
+		f, err = strconv.ParseFloat(string(points[1]), 32)
+		if err != nil {
+			return errors.New(fmt.Sprintf("unexpected Latitude %T", src))
+		}
+		l.Latitude = float32(f)
+	}
+	return nil
 }
 
 // Scan exists only to convert from the SQL result of []uint8 to a Status.

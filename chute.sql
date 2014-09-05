@@ -18,8 +18,6 @@ create table profile (
  id serial primary key,
  created timestamp with time zone,
  updated timestamp with time zone,
- latitude float, 
- longitude float, 
  email text,
  phone text,
  name text,
@@ -54,10 +52,10 @@ create table photo (
  caption text
 );
 
-
 create table free (
  id serial primary key,
  profile integer not null references profile (id),
+ location point,
  freestart timestamp with time zone not null,
  freeend timestamp with time zone not null,
  created timestamp with time zone not null
@@ -73,6 +71,11 @@ create table profile_utype (
  profile integer not null references profile (id)
 );
 
+create table free_utype (
+ utype integer not null references utype (id),
+ free integer not null references free (id)
+);
+
 create table flag (
  id serial primary key,
  name varchar(127)
@@ -81,6 +84,11 @@ create table flag (
 create table profile_flag (
  flag integer not null references flag (id),
  profile integer not null references profile (id)
+);
+
+create table free_flag (
+ flag integer not null references flag (id),
+ free integer not null references free (id)
 );
 
 create table invite (
