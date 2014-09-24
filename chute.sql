@@ -14,8 +14,18 @@
 
 -- In our scheme, a profilename+password is a floating "device" which has a default name of "web".
 
+create table ratetype (
+ id integer primary key,
+ sort integer not null unique,
+ name text,
+ comm text
+);
+
 create table profile (
  id serial primary key,
+ ratetype integer references ratetype (id) default 1,
+ hourly integer,
+ daily integer,
  created timestamp with time zone,
  updated timestamp with time zone,
  email text,
