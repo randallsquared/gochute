@@ -30,14 +30,18 @@ type PhotoChange struct {
 }
 
 type Profile struct {
-	Id      int
-	Created time.Time
-	Email   *string
-	Phone   *string
-	Name    *string
-	Photos  []Photo
-	Flags   []profile.Flag
-	Utypes  []profile.Utype
+	Id         int
+	RateTypeId int
+	HourlyRate int
+	DailyRate  int
+	RateUnits  string
+	Created    time.Time
+	Email      *string
+	Phone      *string
+	Name       *string
+	Photos     []Photo
+	Flags      []profile.Flag
+	Utypes     []profile.Utype
 }
 
 type Auth struct {
@@ -75,6 +79,8 @@ type Freetime struct {
 	Start    time.Time
 	End      time.Time
 	Location *profile.Location
+	Utypes   []profile.Utype
+	Flags    []profile.Flag
 }
 
 // NewMessage doesn't need Invite, since it's either part of one or that info is in the URL.
@@ -204,6 +210,10 @@ func (m *Message) convert(im profile.Message) error {
 
 func (p *Profile) convert(ip profile.Profile) error {
 	p.Id = ip.Id
+	p.RateTypeId = ip.RateTypeId
+	p.DailyRate = ip.DailyRate
+	p.HourlyRate = ip.HourlyRate
+	p.RateUnits = ip.RateUnits
 	p.Created = ip.Created
 	p.Email = ip.Email
 	p.Phone = ip.Phone
@@ -691,9 +701,23 @@ func getProfilesBySearch(u *url.URL, h http.Header, _ interface{}, c *Context) (
 		p    Profile
 		ps   []Profile
 		from time.Time
+		lat  float64
+		lon  float64
 		err  error
 	)
 	query := u.Query()
+	if la := query.Get("lat"); len(la) > 0 {
+		lat, err = strconv.ParseFloat(la, 32)
+		if err != nil {
+			return error400("didn't understand '"+la+"' as a latitude", err.Error())
+		}
+	}
+	if lo := query.Get("lon"); len(lo) > 0 {
+		lon, err = strconv.ParseFloat(lo, 32)
+		if err != nil {
+			return error400("didn't understand '"+lo+"' as a longitude", err.Error())
+		}
+	}
 	if f := query.Get("from"); len(f) > 0 {
 		from, err = time.Parse(time.RFC3339Nano, f)
 		if err != nil {
@@ -716,7 +740,7 @@ func getProfilesBySearch(u *url.URL, h http.Header, _ interface{}, c *Context) (
 	}
 	// get all profiles with freetimes surrounding this 'from'
 	// we start with the autenticated profile to get the lat and long without having to pass it
-	ips, err := c.Profile.Search(from, utypes, flags)
+	ips, err := c.Profile.Search(from, utypes, flags, float32(lat), float32(lon))
 	if err != nil {
 		return error500("db failure: p205", err.Error())
 	}
@@ -756,6 +780,14 @@ func getFlags(u *url.URL, h http.Header, _ interface{}) (int, http.Header, Respo
 	return http.StatusOK, nil, flags, nil
 }
 
+func getRates(u *url.URL, h http.Header, _ interface{}) (int, http.Header, Response, error) {
+	rates, err := profile.GetRateTypes()
+	if err != nil {
+		return error500("db failure: p762", err.Error())
+	}
+	return http.StatusOK, nil, rates, nil
+}
+
 func getTypes(u *url.URL, h http.Header, _ interface{}) (int, http.Header, Response, error) {
 	types, err := profile.GetTypes()
 	if err != nil {
@@ -776,7 +808,7 @@ func getFreetime(u *url.URL, h http.Header, _ interface{}, c *Context) (int, htt
 		return error500("db failure: p212", err.Error())
 	}
 	for _, f := range profileFs {
-		fs = append(fs, Freetime{f.Start, f.End, f.Location})
+		fs = append(fs, Freetime{f.Start, f.End, f.Location, f.Utypes, f.Flags})
 	}
 	return http.StatusOK, nil, fs, nil
 }
@@ -816,10 +848,10 @@ func createFreetime(u *url.URL, h http.Header, fs []Freetime, c *Context) (int, 
 	}
 	var err error
 	for _, f := range fs {
-		err = c.Profile.NewFreetime(f.Start, f.End, f.Location)
+		err = c.Profile.NewFreetime(f.Start, f.End, f.Location, f.Utypes, f.Flags)
 		if err != nil {
 			if err.Error() == profile.DuplicateFreetimeError {
-				err = c.Profile.UpdateFreetime(f.Start, f.End, f.Location)
+				err = c.Profile.UpdateFreetime(f.Start, f.End, f.Location, f.Utypes, f.Flags)
 				if err != nil {
 					return error500("db failure: p261", err.Error())
 				}
@@ -833,6 +865,10 @@ func createFreetime(u *url.URL, h http.Header, fs []Freetime, c *Context) (int, 
 
 func updateProfile(u *url.URL, h http.Header, p *Profile, c *Context) (int, http.Header, Response, error) {
 	// we're already authed, so we just have to update and save, right?
+	c.Profile.RateTypeId = p.RateTypeId
+	c.Profile.HourlyRate = p.HourlyRate
+	c.Profile.DailyRate = p.DailyRate
+	c.Profile.RateUnits = p.RateUnits
 	c.Profile.Email = p.Email
 	c.Profile.Phone = p.Phone
 	c.Profile.Name = p.Name

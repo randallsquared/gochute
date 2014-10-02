@@ -68,7 +68,9 @@ create table free (
  location point,
  freestart timestamp with time zone not null,
  freeend timestamp with time zone not null,
- created timestamp with time zone not null
+ created timestamp with time zone not null,
+ updated timestamp with time zone not null default now(),
+ constraint profilestart unique (profile, freestart)
 );
 
 create table utype (
@@ -83,7 +85,7 @@ create table profile_utype (
 
 create table free_utype (
  utype integer not null references utype (id),
- free integer not null references free (id)
+ free integer not null references free (id) on delete cascade
 );
 
 create table flag (
@@ -98,7 +100,7 @@ create table profile_flag (
 
 create table free_flag (
  flag integer not null references flag (id),
- free integer not null references free (id)
+ free integer not null references free (id) on delete cascade
 );
 
 create table invite (
@@ -126,6 +128,11 @@ create table message (
  photo integer null references photo (id)
 );
 
+insert into utype (name) values ('Model'), ('Photographer'), ('Makeup Artist');
+insert into flag (name) values ('Nude');
+
+
+
 -- not yet converted
 
 create table block (
@@ -134,8 +141,6 @@ create table block (
 );
 
 
-insert into utype (name) values ('Model'), ('Photographer'), ('Makeup Artist');
-insert into flag (name) values ('Nude');
 
 
 

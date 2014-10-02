@@ -88,16 +88,20 @@ type Location struct {
 // Profile is the central access to user information, and the receiver for most methods
 // in the profile package.
 type Profile struct {
-	Auth    *Auth   `db:"-"`
-	Utypes  []Utype `db:"-"`
-	Flags   []Flag  `db:"-"`
-	Id      int
-	Created time.Time
-	Updated time.Time
-	Email   *string
-	Phone   *string
-	Name    *string
-	Folder  string
+	Auth       *Auth   `db:"-"`
+	Utypes     []Utype `db:"-"`
+	Flags      []Flag  `db:"-"`
+	Id         int
+	RateTypeId int `db:"ratetype"`
+	HourlyRate int `db:"hourly"`
+	DailyRate  int `db:"daily"`
+	RateUnits  string
+	Created    time.Time
+	Updated    time.Time
+	Email      *string
+	Phone      *string
+	Name       *string
+	Folder     string
 }
 
 // Photo keeps track of information about uploaded photos, including the final location
@@ -118,9 +122,12 @@ type Photo struct {
 // Freetimes are unique in (Profile, Start).  This means that we can update a Freetime
 // given those data and a new End, without having to expose the Id through JSON.
 type Freetime struct {
+	Utypes   []Utype `db:"-"`
+	Flags    []Flag  `db:"-"`
 	Id       int
 	Profile  int
 	Created  time.Time
+	Updated  time.Time
 	Start    time.Time `db:"freestart"`
 	End      time.Time `db:"freeend"`
 	Location *Location
@@ -133,10 +140,32 @@ type Utype struct {
 	Name string
 }
 
+// UtypeConnector is a connector for getting all the Utypes for a Freetime  or Profile without
+// a SQL query for each
+type UtypeConnector struct {
+	Connector int
+	Utype
+}
+
 // Flag represents any search flag such as "does nude modeling".
 type Flag struct {
 	Id   int
 	Name string
+}
+
+// FlagConnector is a connector for getting all the Flags for a Freetime  or Profile without
+// a SQL query for each
+type FlagConnector struct {
+	Connector int
+	Flag
+}
+
+// RateType represents any sort of compensation category such as "paid only"
+type RateType struct {
+	Id   int
+	Sort int
+	Name string
+	Comm string
 }
 
 type Attendee struct {
@@ -281,19 +310,21 @@ func (p *Photo) Remove() error {
 // 'from' is treated as a time between the free start and free end times.
 // 'utypes' are treated as OR; any Profile Utype can match.
 // 'flags' are treated as AND; all flags must match.
-func (p *Profile) Search(from time.Time, utypes, flags []string) ([]Profile, error) {
-	// TODO: handle lat and long!
+func (p *Profile) Search(from time.Time, utypes, flags []string, lat, lon float32) ([]Profile, error) {
 	var ps []Profile
+	statuteMiles := 50
 	q := `
 select distinct profile.* from free inner join profile on (free.profile = profile.id) 
-where freestart < :from and :from < freeend 
+where freestart < :from and :from < freeend and location <@> :loc < :statmiles
     `
 	params := map[string]interface{}{}
 	params["from"] = from
+	params["loc"] = fmt.Sprintf("(%f,%f)", lon, lat)
+	params["statmiles"] = statuteMiles
 
 	for _, v := range flags {
 		n := token()
-		q += "\nand profile in (select profile from profile_flag where flag = :" + n + ")\n"
+		q += "\nand free.id in (select free from free_flag where flag = :" + n + ")\n"
 		params[n] = v
 	}
 	if len(utypes) > 0 {
@@ -304,7 +335,7 @@ where freestart < :from and :from < freeend
 			params[n] = v
 		}
 		ors := strings.Join(fs, " or ")
-		q += "\nand profile in (select profile from profile_utype where " + ors + ")\n"
+		q += "\nand free.id in (select free from free_utype where " + ors + ")\n"
 	}
 	_, err := dbmap.Select(&ps, q, params)
 	if err != nil {
@@ -320,26 +351,60 @@ where freestart < :from and :from < freeend
 	return ps, nil
 }
 
+func updateFreeUtype(fid int64, ts []Utype) error {
+	_, err := dbmap.Exec("delete from free_utype where free = $1", fid)
+	if err != nil {
+		return err
+	}
+	// insert []Utype
+	for _, t := range ts {
+		_, err := dbmap.Exec("insert into free_utype (utype, free) values ($1, $2)", t.Id, fid)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func updateFreeFlag(fid int64, fs []Flag) error {
+	_, err := dbmap.Exec("delete from free_flag where free = $1", fid)
+	if err != nil {
+		return err
+	}
+	// insert []Flag
+	for _, f := range fs {
+		_, err := dbmap.Exec("insert into free_flag (flag, free) values ($1, $2)", f.Id, fid)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // UpdateFreetime changes the End of a Freetime given the receiving Profile and Start.
-func (p *Profile) UpdateFreetime(start, end time.Time, l *Location) error {
+func (p *Profile) UpdateFreetime(start, end time.Time, l *Location, ts []Utype, fs []Flag) error {
 	ft := Freetime{}
 	err := dbmap.SelectOne(&ft, "select * from free where profile = $1 and freestart = $2", p.Id, start)
 	if err != nil {
 		return err
 	}
-	ft.End = end
-	ft.Location = l
-	count, err := dbmap.Update(&ft)
+	var point *string
+	if l == nil {
+		point = nil
+	} else {
+		ps := fmt.Sprintf("(%f,%f)", l.Longitude, l.Latitude)
+		point = &ps
+	}
+	_, err = dbmap.Exec("update free set updated = now(), location = $1, freeend = $2 where profile = $3 and freestart = $4", point, end, p.Id, start)
 	if err != nil {
 		return err
 	}
-	if count != 1 {
-		return errors.New("update Freetime didn't update 1 row? count: " + string(count))
-	}
+	updateFreeUtype(int64(ft.Id), ts)
+	updateFreeFlag(int64(ft.Id), fs)
 	return nil
 }
 
-// RemoveallFreetime clears all Freetimes from the receiver.
+// RemoveAllFreetime clears all Freetimes from the receiver.
 func (p *Profile) RemoveAllFreetime() error {
 	_, err := dbmap.Exec("delete from free where profile = $1", p.Id)
 	return err
@@ -354,7 +419,7 @@ func (p *Profile) RemoveFreetime(Start time.Time) error {
 // NewFreetime creates a new Freetime and saves it in the database.
 // If the new Freetime has the same receiving Profile and Start time as another Freetime,
 // it is an error.
-func (p *Profile) NewFreetime(start, end time.Time, l *Location) error {
+func (p *Profile) NewFreetime(start, end time.Time, l *Location, ts []Utype, fs []Flag) error {
 	var point *string
 	if l == nil {
 		point = nil
@@ -371,6 +436,12 @@ func (p *Profile) NewFreetime(start, end time.Time, l *Location) error {
 		}
 		return err
 	}
+	id, err := dbmap.SelectInt("select id from free where profile = $1 and freestart = $2", p.Id, start)
+	if err != nil {
+		return err
+	}
+	updateFreeUtype(id, ts)
+	updateFreeFlag(id, fs)
 	return nil
 }
 
@@ -378,6 +449,44 @@ func (p *Profile) NewFreetime(start, end time.Time, l *Location) error {
 func (p *Profile) GetFreetimes() ([]Freetime, error) {
 	fs := []Freetime{}
 	_, err := dbmap.Select(&fs, "select * from free where profile = $1 and freestart > current_date - 1 order by freestart asc", p.Id)
+
+	flags := []FlagConnector{}
+	fq := `select free_flag.free as connector, flag.* 
+	   from free 
+	     left join free_flag on free_flag.free = free.id 
+		 inner join flag on free_flag.flag = flag.id
+       where profile = $1 and freestart > current_date - 1 
+	   order by freestart asc`
+	_, err = dbmap.Select(&flags, fq, p.Id)
+	if err != nil {
+		return []Freetime{}, err
+	}
+
+	types := []UtypeConnector{}
+	tq := `select free_utype.free as connector, utype.* 
+        from free 
+          left join free_utype on free_utype.free = free.id 
+          inner join utype on free_utype.utype = utype.id
+        where profile = $1 and freestart > current_date - 1 
+ 		order by freestart asc`
+	_, err = dbmap.Select(&types, tq, p.Id)
+	if err != nil {
+		return []Freetime{}, err
+	}
+
+	for i, ft := range fs {
+		for _, flag := range flags {
+			if flag.Connector == ft.Id {
+				fs[i].Flags = append(fs[i].Flags, flag.Flag)
+			}
+		}
+		for _, utype := range types {
+			if utype.Connector == ft.Id {
+				fs[i].Utypes = append(fs[i].Utypes, utype.Utype)
+			}
+		}
+	}
+
 	return fs, err
 }
 
@@ -656,6 +765,13 @@ func (p *Profile) PostUpdate(s gorp.SqlExecutor) error {
 		}
 	}
 	return nil
+}
+
+// GetRateTypes returns an array of all possible RateTypes
+func GetRateTypes() ([]RateType, error) {
+	var ts []RateType
+	_, err := dbmap.Select(&ts, "select * from ratetype order by sort asc")
+	return ts, err
 }
 
 // GetFlags returns an array of all possible Flags.

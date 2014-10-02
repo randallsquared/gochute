@@ -13,7 +13,8 @@ insert into ratetype values
  (3, 3, 'Depends on shoot', 'Rates depend on type, distance, and other characteristics of shoot'),
  (4, 4, 'Paid only', 'Paid shoots only');
 
-alter table profile add column ratetype integer references ratetype (id) default 1;
-alter table profile add column hourly integer;
-alter table profile add column daily integer;
+alter table profile add column ratetype integer references ratetype (id) not null default 1;
+alter table profile add column hourly integer not null default 0;
+alter table profile add column daily integer not null default 0;
+alter table profile add column rateunits char(3) not null default 'USD';
 

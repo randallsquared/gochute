@@ -104,6 +104,7 @@ func init() {
 	mux.Handle("DELETE", "/profiles/self/frees/{start}", authenticated(removeFreetime))
 	mux.Handle("GET", "/flags", unauthenticated(getFlags))
 	mux.Handle("GET", "/types", unauthenticated(getTypes))
+	mux.Handle("GET", "/rates", unauthenticated(getRates))
 	// TODO: need to make sure this doesn't get cached
 	mux.Handle("GET", "/profiles", authenticated(getProfilesBySearch))
 	mux.Handle("POST", "/invites", authenticated(invite))
