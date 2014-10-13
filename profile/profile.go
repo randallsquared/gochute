@@ -580,6 +580,7 @@ func (a *Auth) Create() error {
 // Create does some pre-insert work to get timestamps and the Folder in the right state.
 func (p *Profile) Create() error {
 	t := time.Now()
+	p.RateTypeId = 1
 	p.Created = t
 	p.Updated = t
 	p.Folder = token()
