@@ -588,6 +588,9 @@ func createAuth(u *url.URL, h http.Header, r *AuthCreate, c *Context) (int, http
 }
 
 func login(u *url.URL, h http.Header, r *Auth) (int, http.Header, Response, error) {
+	if r == nil {
+		return error400("no authorization provided")
+	}
 	auth := profile.NewAuth(r.Hash, r.Username)
 	err := auth.Get()
 	log.Println("got auth:", auth)
